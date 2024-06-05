@@ -1147,30 +1147,15 @@ class ClassificationDataset(torchvision.datasets.ImageFolder):
         self.cache_disk = cache == "disk"
         self.samples = [list(x) + [Path(x[0]).with_suffix(".npy"), None] for x in self.samples]  # file, index, npy, im
 
-    def __getitem__(self, i):
-        f, j, fn, im = self.samples[i]  # filename, index, filename.with_suffix('.npy'), image
-        if self.cache_ram and im is None:
-            im = self.samples[i][3] = cv2.imread(f)
-        elif self.cache_disk:
-            if not fn.exists():  # load npy
-                np.save(fn.as_posix(), cv2.imread(f))
-            im = np.load(fn)
-        else:  # read image
-            im = cv2.imread(f)  # BGR
+    def __getitem__(self, index):
+        img_path = self.im_files[index]
+        labels = self.labels[index]
 
-        # 转换图片格式和数据类型
-        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        im = to_tensor(im)
+        img = cv2.imread(img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        if self.album_transforms:
-            sample = self.album_transforms(image=im)["image"]
-        else:
-            sample = self.torch_transforms(im)
-
-        shape = im.shape  # 获取图像形状作为返回值之一
-        path = f  # 文件路径作为返回值之一
-
-        return sample, j, path, shape  # 确保返回四个值以匹配 collate_fn 预期
+        img = torch.from_numpy(img).float().permute(2, 0, 1) / 255.0  # 转换为 PyTorch 张量并归一化
+        return img, labels, img_path, img.shape
 
 
 def create_classification_dataloader(

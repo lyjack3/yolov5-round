@@ -32,35 +32,24 @@ def circle_iou(cx1, cy1, r1, cx2, cy2, r2):
     return iou
 
 
-import torch
-
-
-import torch
-
-import torch
-
-import torch
-
-
-import torch
-
-import torch
-
 class CircleLoss:
     def __init__(self):
         pass
 
     def __call__(self, preds, targets):
+        # 确保预测结果和目标都为张量
         total_loss = 0
-        N, C, H, W = preds[0].shape[:4]  # 获取第一个预测张量的形状
-        # 将 targets 扩展到与预测张量相同的形状
-        targets_resized = targets.view(N, -1).unsqueeze(-1).unsqueeze(-1).expand(N, targets.size(1), H, W)
+        N = targets.size(0)  # batch size
 
         for pred in preds:
+            # 这里假设每个预测的形状已经是正确的 (N, C, H, W, 6)
+            _, C, H, W, _ = pred.shape
             cx_pred, cy_pred, r_pred = pred[..., 0], pred[..., 1], pred[..., 2]
-            cx_target = targets_resized[:, 0]
-            cy_target = targets_resized[:, 1]
-            r_target = targets_resized[:, 2]
+
+            # 展开 targets，以匹配 preds 的形状
+            cx_target = targets[:, 0].view(N, 1, 1, 1).expand(N, C, H, W)
+            cy_target = targets[:, 1].view(N, 1, 1, 1).expand(N, C, H, W)
+            r_target = targets[:, 2].view(N, 1, 1, 1).expand(N, C, H, W)
 
             # 计算两圆之间的距离和IoU
             dist = torch.sqrt((cx_pred - cx_target) ** 2 + (cy_pred - cy_target) ** 2)
