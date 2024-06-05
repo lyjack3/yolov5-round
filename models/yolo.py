@@ -79,7 +79,7 @@ class Detect(nn.Module):
         """Initializes YOLOv5 detection layer with specified classes, anchors, channels, and inplace operations."""
         super().__init__()
         self.nc = nc  # number of classes
-        self.no = nc + 5  # number of outputs per anchor
+        self.no = 2 + 1 + 1 + nc  # x, y, radius, objectness, class confidences
         self.nl = len(anchors)  # number of detection layers
         self.na = len(anchors[0]) // 2  # number of anchors
         self.grid = [torch.empty(0) for _ in range(self.nl)]  # init grid
@@ -89,25 +89,25 @@ class Detect(nn.Module):
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
 
     def forward(self, x):
-        """Processes input through YOLOv5 layers, altering shape for detection: `x(bs, 3, ny, nx, 85)`."""
         z = []  # inference output
         for i in range(self.nl):
             x[i] = self.m[i](x[i])  # conv
-            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+            bs, _, ny, nx = x[i].shape
+            print(f"Batch size: {bs}, Anchors: {self.na}, Output per anchor: {self.no}, Grid size: {nx}x{ny}")
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
 
-            if not self.training:  # inference
+            if not self.training:
                 if self.dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
                     self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
 
                 xy, r, conf = x[i].sigmoid().split((2, 1, self.nc + 1), 4)
-                xy = (xy * 2 + self.grid[i]) * self.stride[i]  # xy
-                r = (r * 2) ** 2 * self.anchor_grid[i][:, :, 0:1]  # radius, assuming square anchors for simplicity
                 y = torch.cat((xy, r, conf), 4)
-
                 z.append(y.view(bs, self.na * nx * ny, self.no))
 
-        return x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)
+        if self.training:
+            return x
+        else:
+            return torch.cat(z, 1), x if not self.export else (torch.cat(z, 1),)
 
     def _make_grid(self, nx=20, ny=20, i=0, torch_1_10=check_version(torch.__version__, "1.10.0")):
         """Generates a mesh grid for anchor boxes with optional compatibility for torch versions < 1.10."""

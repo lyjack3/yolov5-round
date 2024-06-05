@@ -652,7 +652,7 @@ class LoadImagesAndLabels(Dataset):
     def __getitem__(self, index):
         # 获取图像路径和对应的标签
         img_path = self.im_files[index]
-        labels = self.labels[index]
+        labels = self.labels[index]  # 假设 labels 已经是正确格式
 
         # 加载图像
         img = cv2.imread(img_path)
@@ -661,10 +661,12 @@ class LoadImagesAndLabels(Dataset):
         # 调整图像大小并转换为Tensor
         img = self.transform(img)
 
-        # 确保标签格式正确
+        # 确保标签使用正确的尺度
         if labels.size > 0:
-            labels[:, 1:3] *= self.img_size
-            labels[:, 3] *= self.img_size
+            # 将标签从归一化值转换为实际像素值
+            labels[:, 1] *= img.shape[1]  # cx
+            labels[:, 2] *= img.shape[0]  # cy
+            labels[:, 3] *= min(img.shape[0], img.shape[1])  # radius, assuming radius is the min of width and height
 
         return img, labels, img_path, img.shape
 
@@ -842,11 +844,23 @@ class LoadImagesAndLabels(Dataset):
 
     @staticmethod
     def collate_fn(batch):
-        """Batches images, labels, paths, and shapes, assigning unique indices to targets in merged label tensor."""
-        im, label, path, shapes = zip(*batch)  # transposed
-        ims = torch.stack([torch.tensor(i) for i in im], 0)  # 确保所有图像都是tensor且尺寸统一
-        labels = torch.cat([torch.tensor(l, dtype=torch.float32) for l in label], 0)  # 确保标签为tensor
-        return ims, labels, path, shapes
+        imgs, labels, paths, shapes = zip(*batch)
+
+        # 确保所有图像都是tensor且尺寸统一
+        imgs = torch.stack([torch.tensor(img) for img in imgs], 0)
+
+        # 批处理中可能存在的不同长度的标签需要特殊处理
+        max_labels = max(len(l) for l in labels)
+        padded_labels = []
+        for label in labels:
+            padded_label = torch.zeros((max_labels, 4))  # 假设标签有四个元素
+            if len(label) > 0:
+                padded_label[:len(label), :] = torch.tensor(label, dtype=torch.float32)
+            padded_labels.append(padded_label)
+
+        labels = torch.stack(padded_labels, 0)  # 将列表转换为张量
+
+        return imgs, labels, paths, shapes
 
     @staticmethod
     def collate_fn4(batch):

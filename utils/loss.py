@@ -34,37 +34,47 @@ def circle_iou(cx1, cy1, r1, cx2, cy2, r2):
 
 class CircleLoss:
     def __init__(self):
+        # 初始化参数，如果有的话
         pass
 
     def __call__(self, preds, targets):
-        # 确保预测结果和目标都为张量
-        total_loss = 0
-        N = targets.size(0)  # batch size
+        """计算预测圆和目标圆之间的IoU损失"""
+        total_loss = 0.0
+        total_preds = 0  # 用于计算平均损失的预测总数
 
+        # 处理每个尺度的预测
         for pred in preds:
-            # 这里假设每个预测的形状已经是正确的 (N, C, H, W, 6)
-            _, C, H, W, _ = pred.shape
-            cx_pred, cy_pred, r_pred = pred[..., 0], pred[..., 1], pred[..., 2]
+            batch_size = pred.shape[0]
+            total_preds += batch_size
 
-            # 展开 targets，以匹配 preds 的形状
-            cx_target = targets[:, 0].view(N, 1, 1, 1).expand(N, C, H, W)
-            cy_target = targets[:, 1].view(N, 1, 1, 1).expand(N, C, H, W)
-            r_target = targets[:, 2].view(N, 1, 1, 1).expand(N, C, H, W)
+            for b in range(batch_size):
+                # 获取单个样本的预测和目标
+                single_pred = pred[b]
+                single_target = targets[b]
 
-            # 计算两圆之间的距离和IoU
-            dist = torch.sqrt((cx_pred - cx_target) ** 2 + (cy_pred - cy_target) ** 2)
-            intersection = torch.clamp(r_pred + r_target - dist, min=0)
-            area_pred = torch.pi * r_pred ** 2
-            area_target = torch.pi * r_target ** 2
-            union = area_pred + area_target - intersection
+                # 过滤出有效标签
+                valid_target_mask = single_target[:, 0] > 0  # 假设类别ID大于0为有效标签
+                valid_targets = single_target[valid_target_mask]
 
-            iou = intersection / union
-            loss = 1 - iou.mean()  # 求均值并计算损失
-            total_loss += loss
+                if len(valid_targets) == 0:
+                    continue  # 如果没有有效标签，跳过这个样本
 
-        return total_loss / len(preds)  # 返回平均损失
+                # 解析预测和目标的圆心坐标和半径
+                cx_pred, cy_pred, r_pred = single_pred[..., 0], single_pred[..., 1], single_pred[..., 2]
+                cx_target, cy_target, r_target = valid_targets[:, 0], valid_targets[:, 1], valid_targets[:, 2]
 
+                # 计算每个预测和每个目标之间的距离和IoU
+                for ct in range(len(cx_target)):
+                    dist = torch.sqrt((cx_pred - cx_target[ct]) ** 2 + (cy_pred - cy_target[ct]) ** 2)
+                    intersection = torch.clamp(r_pred + r_target[ct] - dist, min=0)
+                    area_pred = torch.pi * r_pred ** 2
+                    area_target = torch.pi * r_target[ct] ** 2
+                    union = area_pred + area_target - intersection
+                    iou = intersection / union
+                    loss = 1 - iou.mean()  # 计算这个目标的平均IoU损失
+                    total_loss += loss
 
+        return total_loss / total_preds if total_preds > 0 else 0
 
 
 def smooth_BCE(eps=0.1):
