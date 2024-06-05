@@ -24,6 +24,9 @@ import torchvision
 import yaml
 from PIL import ExifTags, Image, ImageOps
 from torch.utils.data import DataLoader, Dataset, dataloader, distributed
+from torchvision import transforms
+from torchvision.transforms import Resize, ToTensor
+from torchvision.transforms.functional import to_tensor
 from tqdm import tqdm
 
 from utils.augmentations import (
@@ -630,16 +633,33 @@ class LoadImagesAndLabels(Dataset):
         """Returns the number of images in the dataset."""
         return len(self.im_files)
 
+    from torchvision import transforms
+
+    from torchvision import transforms
+
+    from torchvision import transforms
+    import torch
+
+    from torchvision.transforms import Resize
+
+    from PIL import Image
+    from torchvision.transforms import Resize, ToTensor
+
     def __getitem__(self, index):
-        # 获取图像路径和对应的标签
         img_path = self.im_files[index]
         labels = self.labels[index]
-
-        # 加载图像
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(img)  # 将numpy数组转换为PIL图像
 
-        return img, labels, img_path
+        # 假设你希望所有图像都调整到 640x640 的大小
+        resize_transform = Resize((640, 640))
+        img = resize_transform(img)
+
+        # 转换为张量
+        img_tensor = ToTensor()(img)
+
+        return img_tensor, labels, img_path, img_tensor.shape
 
     def load_image(self, i):
         """
@@ -817,9 +837,9 @@ class LoadImagesAndLabels(Dataset):
     def collate_fn(batch):
         """Batches images, labels, paths, and shapes, assigning unique indices to targets in merged label tensor."""
         im, label, path, shapes = zip(*batch)  # transposed
-        for i, lb in enumerate(label):
-            lb[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(im, 0), torch.cat(label, 0), path, shapes
+        ims = torch.stack([torch.tensor(i) for i in im], 0)  # 确保所有图像都是tensor且尺寸统一
+        labels = torch.cat([torch.tensor(l, dtype=torch.float32) for l in label], 0)  # 确保标签为tensor
+        return ims, labels, path, shapes
 
     @staticmethod
     def collate_fn4(batch):
@@ -1121,7 +1141,6 @@ class ClassificationDataset(torchvision.datasets.ImageFolder):
         self.samples = [list(x) + [Path(x[0]).with_suffix(".npy"), None] for x in self.samples]  # file, index, npy, im
 
     def __getitem__(self, i):
-        """Fetches and transforms an image sample by index, supporting RAM/disk caching and Augmentations."""
         f, j, fn, im = self.samples[i]  # filename, index, filename.with_suffix('.npy'), image
         if self.cache_ram and im is None:
             im = self.samples[i][3] = cv2.imread(f)
@@ -1132,8 +1151,12 @@ class ClassificationDataset(torchvision.datasets.ImageFolder):
         else:  # read image
             im = cv2.imread(f)  # BGR
 
+        # 转换图片格式和数据类型
+        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        im = to_tensor(im)
+
         if self.album_transforms:
-            sample = self.album_transforms(image=cv2.cvtColor(im, cv2.COLOR_BGR2RGB))["image"]
+            sample = self.album_transforms(image=im)["image"]
         else:
             sample = self.torch_transforms(im)
 

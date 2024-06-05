@@ -34,21 +34,27 @@ def circle_iou(cx1, cy1, r1, cx2, cy2, r2):
 
 class CircleLoss:
     def __init__(self):
-        # 初始化一些参数
         pass
 
-    def __call__(self, pred, target):
-        """计算预测框和真实框之间的IoU损失"""
-        cx_pred, cy_pred, r_pred = pred[:, :, 0], pred[:, :, 1], pred[:, :, 2]
-        cx_target, cy_target, r_target = target[:, :, 0], target[:, :, 1], target[:, :, 2]
+    def __call__(self, preds, targets):
+        total_loss = 0
+        for pred in preds:
+            # 假设每个预测的维度是 (N, C, S, S, 6) ，targets 的维度需要与之对应
+            cx_pred, cy_pred, r_pred = pred[..., 0], pred[..., 1], pred[..., 2]
+            cx_target, cy_target, r_target = targets[..., 0], targets[..., 1], targets[..., 2]
 
-        ious = torch.zeros_like(cx_pred)
-        for i in range(cx_pred.size(0)):
-            for j in range(cx_pred.size(1)):
-                ious[i, j] = circle_iou(cx_pred[i, j], cy_pred[i, j], r_pred[i, j], cx_target[i, j], cy_target[i, j], r_target[i, j])
+            dist = torch.sqrt((cx_pred - cx_target) ** 2 + (cy_pred - cy_target) ** 2)
+            intersection = torch.clamp(r_pred + r_target - dist, min=0)
+            area_pred = torch.pi * r_pred ** 2
+            area_target = torch.pi * r_target ** 2
+            union = area_pred + area_target - intersection
+            iou = intersection / union
+            loss = 1 - iou.mean()
+            total_loss += loss
 
-        loss = 1 - ious.mean()
-        return loss
+        return total_loss / len(preds)
+
+
 
 
 def smooth_BCE(eps=0.1):
